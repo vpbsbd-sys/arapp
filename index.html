@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>BioGas AR — Anaerobic Digester Explorer</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Hanken+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    :root{
+      --bg:#0c1410;
+      --leaf:#8fd14f;        /* biogas / methane green */
+      --leaf-dim:#5e8f33;
+      --clay:#c0562f;        /* terracotta, echoes the diagram */
+      --clay-soft:#e2885e;
+      --ink:#eaf3e6;
+      --muted:#9bb29a;
+      --glass:rgba(14,24,18,.62);
+      --glass-line:rgba(143,209,79,.22);
+      --shadow:0 18px 50px rgba(0,0,0,.55);
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);
+      font-family:'Hanken Grotesk',system-ui,sans-serif;color:var(--ink)}
+    a-scene{position:fixed;inset:0}
+
+    /* ---------- generic glass ---------- */
+    .glass{background:var(--glass);backdrop-filter:blur(16px) saturate(1.3);
+      -webkit-backdrop-filter:blur(16px) saturate(1.3);
+      border:1px solid var(--glass-line);box-shadow:var(--shadow)}
+
+    /* ---------- LOADER ---------- */
+    #loader{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:26px;
+      background:radial-gradient(120% 120% at 50% 0%,#13231a 0%,#0a110d 70%)}
+    #loader.hidden{opacity:0;pointer-events:none;transition:opacity .7s ease}
+    .ring{width:78px;height:78px;border-radius:50%;
+      border:3px solid rgba(143,209,79,.18);border-top-color:var(--leaf);
+      animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .bubble{position:absolute;border-radius:50%;background:var(--leaf);opacity:.0;
+      animation:rise 3.2s ease-in infinite}
+    @keyframes rise{0%{transform:translateY(40px) scale(.4);opacity:0}
+      20%{opacity:.5}100%{transform:translateY(-120px) scale(1);opacity:0}}
+    #loader h1{font-family:'Fraunces',serif;font-weight:900;font-size:30px;margin:0;
+      letter-spacing:-.5px;text-align:center}
+    #loader h1 em{color:var(--leaf);font-style:normal}
+    #loader p{margin:0;color:var(--muted);font-size:14px;letter-spacing:.3px}
+
+    /* ---------- TOP BAR ---------- */
+    #topbar{position:fixed;top:0;left:0;right:0;z-index:30;
+      display:flex;align-items:center;gap:12px;padding:14px 16px;
+      background:linear-gradient(180deg,rgba(6,12,8,.78),rgba(6,12,8,0))}
+    .mark{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;
+      background:linear-gradient(140deg,var(--leaf),var(--leaf-dim));color:#0b1a0b;
+      font-family:'Fraunces',serif;font-weight:900;font-size:18px;box-shadow:0 6px 18px rgba(143,209,79,.35)}
+    #topbar .t{font-family:'Fraunces',serif;font-weight:600;font-size:17px;line-height:1}
+    #topbar .s{font-size:11px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase}
+
+    /* ---------- SCAN HINT ---------- */
+    #hint{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:25;
+      display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:999px;
+      font-size:14px;font-weight:500;max-width:88vw;text-align:left;transition:opacity .4s}
+    #hint.gone{opacity:0;pointer-events:none}
+    .reticle{width:22px;height:22px;border:2px solid var(--leaf);border-radius:5px;flex:none;
+      position:relative;animation:pulse 1.6s ease-in-out infinite}
+    @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.8);opacity:.5}}
+
+    /* ---------- CONTROL DOCK ---------- */
+    #dock{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:30;
+      display:flex;gap:10px;padding:10px;border-radius:20px;transition:opacity .4s, transform .4s}
+    #dock.gone{opacity:0;transform:translate(-50%,30px);pointer-events:none}
+    .btn{width:50px;height:50px;border-radius:14px;border:1px solid var(--glass-line);
+      background:rgba(255,255,255,.04);color:var(--ink);font-size:20px;cursor:pointer;
+      display:grid;place-items:center;transition:.18s;font-family:inherit}
+    .btn:active{transform:scale(.9)}
+    .btn.on{background:var(--leaf);color:#0b1a0b;border-color:var(--leaf)}
+    .btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+    /* ---------- INFO SHEET ---------- */
+    #parts{position:fixed;left:0;right:0;bottom:0;z-index:35;padding:14px 14px 22px;
+      transform:translateY(120%);transition:transform .45s cubic-bezier(.2,.8,.2,1)}
+    #parts.up{transform:translateY(0)}
+    #parts .handle{width:42px;height:5px;border-radius:99px;background:rgba(255,255,255,.25);
+      margin:0 auto 12px}
+    #parts .wrap{border-radius:22px;padding:16px 16px 6px;max-height:46vh;overflow:auto}
+    #parts h2{font-family:'Fraunces',serif;margin:0 0 2px;font-size:20px;font-weight:600}
+    #parts .lead{margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.5}
+    .chip-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;scrollbar-width:none}
+    .chip-row::-webkit-scrollbar{display:none}
+    .chip{flex:none;padding:9px 14px;border-radius:12px;border:1px solid var(--glass-line);
+      background:rgba(255,255,255,.04);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
+      display:flex;align-items:center;gap:8px;transition:.15s}
+    .chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
+    .chip.sel{background:rgba(143,209,79,.16);border-color:var(--leaf)}
+    .detail{border-top:1px solid var(--glass-line);padding-top:14px}
+    .detail h3{font-family:'Fraunces',serif;font-size:17px;margin:0 0 6px}
+    .detail p{margin:0;font-size:14px;line-height:1.6;color:#d7e6d2}
+    .tag{display:inline-block;margin-top:10px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;
+      color:var(--clay-soft);font-weight:700}
+
+    .fab{position:fixed;right:16px;bottom:84px;z-index:30;height:46px;padding:0 16px;border-radius:14px;
+      display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;cursor:pointer;color:var(--ink);
+      transition:.4s}
+    .fab.gone{opacity:0;transform:translateY(20px);pointer-events:none}
+    .fab .dotg{width:8px;height:8px;border-radius:50%;background:var(--leaf);box-shadow:0 0 10px var(--leaf)}
+  </style>
+</head>
+
+<body>
+  <!-- ===== LOADER ===== -->
+  <div id="loader">
+    <div style="position:relative;display:grid;place-items:center">
+      <div class="ring"></div>
+      <span class="bubble" style="left:30%;animation-delay:0s"></span>
+      <span class="bubble" style="left:50%;animation-delay:.9s"></span>
+      <span class="bubble" style="left:68%;animation-delay:1.7s"></span>
+    </div>
+    <div>
+      <h1>BioGas <em>AR</em></h1>
+      <p style="margin-top:8px">Warming up the camera &amp; digester…</p>
+    </div>
+  </div>
+
+  <!-- ===== TOP BAR ===== -->
+  <div id="topbar">
+    <div class="mark">B</div>
+    <div>
+      <div class="t">BioGas AR</div>
+      <div class="s">Anaerobic Digester Explorer</div>
+    </div>
+  </div>
+
+  <!-- ===== SCAN HINT ===== -->
+  <div id="hint" class="glass">
+    <span class="reticle"></span>
+    <span>Point your camera at the <b>biogas plant diagram</b> to bring it to life.</span>
+  </div>
+
+  <!-- ===== LEARN FAB ===== -->
+  <div id="learn" class="fab glass gone">
+    <span class="dotg"></span> Explore parts
+  </div>
+
+  <!-- ===== CONTROL DOCK ===== -->
+  <div id="dock" class="glass gone">
+    <button class="btn" id="zoomOut" title="Smaller"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg></button>
+    <button class="btn" id="zoomIn" title="Bigger"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg></button>
+    <button class="btn on" id="spin" title="Auto-rotate"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><polyline points="21 3 21 7 17 7"/></svg></button>
+    <button class="btn" id="reset" title="Reset"><svg viewBox="0 0 24 24"><polyline points="3 4 3 9 8 9"/><path d="M3.5 9a9 9 0 1 1-1 6"/></svg></button>
+  </div>
+
+  <!-- ===== INFO SHEET ===== -->
+  <div id="parts">
+    <div class="handle"></div>
+    <div class="wrap glass">
+      <h2>How a biogas plant works</h2>
+      <p class="lead">Cattle dung + water is broken down by methanogenic bacteria in an oxygen-free tank, releasing <b>biogas</b> (~75% methane). Tap a part to learn its job.</p>
+      <div class="chip-row" id="chips"></div>
+      <div class="detail">
+        <h3 id="dTitle">Mixing tank</h3>
+        <p id="dBody"></p>
+        <span class="tag" id="dTag"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== AR SCENE ===== -->
+  <a-scene
+    mindar-image="imageTargetSrc: targets.mind; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.0001; filterBeta: 0.01;"
+    color-space="sRGB"
+    renderer="colorManagement: true, antialias: true, physicallyCorrectLights: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+
+    <a-assets>
+      <a-asset-item id="plant" src="model.glb"></a-asset-item>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- lighting so the dark model reads well -->
+    <a-entity light="type: ambient; color: #cfe8c0; intensity: 1.4"></a-entity>
+    <a-entity light="type: directional; color: #ffffff; intensity: 1.6" position="1 2 1.5"></a-entity>
+    <a-entity light="type: directional; color: #9fcaff; intensity: .6" position="-1.5 1 -1"></a-entity>
+
+    <a-entity id="target" mindar-image-target="targetIndex: 0">
+      <a-gltf-model
+        id="model"
+        src="#plant"
+        position="0 0 0"
+        rotation="-90 0 0"
+        scale="0.8 0.8 0.8"
+        plant-rig>
+      </a-gltf-model>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    /* ---- educational content (from the diagram) ---- */
+    const PARTS = [
+      {c:'#c0562f', t:'Mixing tank',          tag:'Step 1 · Feed-in',
+        b:'Cattle dung is mixed with an equal amount of water to make a thin slurry. This loose mixture flows easily into the plant and gives the bacteria a watery home to work in.'},
+      {c:'#e2885e', t:'Inlet chamber',        tag:'Feed-in',
+        b:'A sloping channel that carries the fresh dung-and-water slurry down from the mixing tank into the underground digester.'},
+      {c:'#6b4226', t:'Digester tank',        tag:'Step 2 · Digestion',
+        b:'A sealed, oxygen-free underground chamber. Methanogenic (anaerobic) bacteria slowly break down the organic matter over several days — this is where the gas is made.'},
+      {c:'#8fd14f', t:'Gas holder / dome',    tag:'Step 3 · Storage',
+        b:'The fixed dome (slab cover) traps the rising biogas. As gas builds up, its pressure pushes the spent slurry out, keeping the supply steady.'},
+      {c:'#b9f06a', t:'Gas outlet',           tag:'Output',
+        b:'A valve and pipe at the top let the stored biogas — about 75% methane — flow out to be burned for cooking, lighting or heating.'},
+      {c:'#9bb29a', t:'Outlet & overflow',    tag:'Step 4 · By-product',
+        b:'Digested “spent slurry” overflows into the outlet chamber and overflow tank. It is removed and used as an excellent nitrogen-rich manure for fields.'},
+    ];
+
+    /* ---- info sheet wiring ---- */
+    const chips=document.getElementById('chips');
+    const dTitle=document.getElementById('dTitle'),dBody=document.getElementById('dBody'),dTag=document.getElementById('dTag');
+    function select(i){
+      [...chips.children].forEach((c,k)=>c.classList.toggle('sel',k===i));
+      dTitle.textContent=PARTS[i].t; dBody.textContent=PARTS[i].b; dTag.textContent=PARTS[i].tag;
+    }
+    PARTS.forEach((p,i)=>{
+      const el=document.createElement('div'); el.className='chip';
+      el.innerHTML=`<span class="dot" style="background:${p.c}"></span>${p.t}`;
+      el.onclick=()=>select(i); chips.appendChild(el);
+    });
+    select(0);
+
+    const sheet=document.getElementById('parts');
+    document.getElementById('learn').onclick=()=>sheet.classList.toggle('up');
+    sheet.querySelector('.handle').onclick=()=>sheet.classList.remove('up');
+
+    /* ---- model rig: auto-rotate + zoom + reset ---- */
+    AFRAME.registerComponent('plant-rig',{
+      init(){
+        this.spin=true; this.baseScale=0.8; this.scale=this.baseScale; this.yaw=0;
+      },
+      tick(t,dt){
+        if(this.spin){ this.yaw += dt*0.00004*60; this.apply(); }
+      },
+      apply(){
+        // model is rotated -90 on X to stand up; yaw lives on the (now) Z axis
+        this.el.object3D.rotation.set(-Math.PI/2, 0, this.yaw);
+        this.el.object3D.scale.set(this.scale,this.scale,this.scale);
+      },
+      setSpin(v){this.spin=v;},
+      zoom(f){this.scale=Math.min(2.0,Math.max(0.3,this.scale*f)); this.apply();},
+      reset(){this.scale=this.baseScale; this.yaw=0; this.spin=true; this.apply();}
+    });
+
+    const rig=()=>document.getElementById('model').components['plant-rig'];
+    document.getElementById('zoomIn').onclick =()=>rig().zoom(1.18);
+    document.getElementById('zoomOut').onclick=()=>rig().zoom(1/1.18);
+    const spinBtn=document.getElementById('spin');
+    spinBtn.onclick=()=>{const r=rig(); r.spin=!r.spin; spinBtn.classList.toggle('on',r.spin);};
+    document.getElementById('reset').onclick=()=>{rig().reset(); spinBtn.classList.add('on');};
+
+    /* ---- AR lifecycle ---- */
+    const scene=document.querySelector('a-scene');
+    const loader=document.getElementById('loader');
+    const hint=document.getElementById('hint');
+    const dock=document.getElementById('dock');
+    const learn=document.getElementById('learn');
+
+    scene.addEventListener('arReady',()=>{ loader.classList.add('hidden'); });
+    scene.addEventListener('arError',()=>{
+      loader.querySelector('p').textContent='Camera blocked — allow access & reload.';
+    });
+
+    const target=document.getElementById('target');
+    target.addEventListener('targetFound',()=>{
+      hint.classList.add('gone'); dock.classList.remove('gone'); learn.classList.remove('gone');
+    });
+    target.addEventListener('targetLost',()=>{
+      hint.classList.remove('gone'); dock.classList.add('gone'); learn.classList.add('gone');
+      sheet.classList.remove('up');
+    });
+
+    // safety: hide loader even if arReady is missed
+    setTimeout(()=>loader.classList.add('hidden'),6000);
+  </script>
+</body>
+</html>
